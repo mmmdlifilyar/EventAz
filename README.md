@@ -84,6 +84,15 @@ Mühit dəyişənlərindən də istifadə edə bilərsiniz. `UseSsl=false` olduq
 | Rəy yazmaq | `POST /api/reviews` | Daxil olmuş, bilet almış istifadəçi |
 | Admin statistikası | `GET /api/admin/statistics` | Admin |
 
+## Swagger-dan tədbir yaratmaq
+
+1. `POST /api/auth/register` vasitəsilə `Role` dəyəri `Organizer` olan hesab yaradın. Mövcud hesabınız varsa, `POST /api/auth/login` ilə token alın.
+2. Cavabdakı tokeni Swagger səhifəsinin yuxarısındakı **Authorize** düyməsinə daxil edin. `Bearer` sxemi tokeni sorğulara avtomatik əlavə edir.
+3. `GET /api/categories` ilə mövcud kateqoriyanı tapın və onun həqiqi `id` dəyərini tədbir sorğusunda `categoryId` kimi istifadə edin.
+4. `POST /api/events` sorğusunda gələcək `startDate` və ondan sonrakı `endDate` göndərin. Tədbir uğurla yaradılanda `Draft` statusunda olur; ictimai siyahıda görünməsi üçün Admin `POST /api/events/{id}/publish` sorğusu göndərməlidir.
+
+`401 Unauthorized` tokenin olmadığını və ya etibarsız olduğunu bildirir; belə sorğu yadda saxlama mərhələsinə çatmır. Token düzgündür, amma istifadəçinin rolu `Admin` və ya `Organizer` deyilsə, `403 Forbidden` qaytarılır.
+
 ## Xəta cavabları
 
 Gözlənilməyən xətalar və CQRS yoxlama xətaları `application/problem+json` formatında qaytarılır. Cavabda HTTP statusu, başlıq, izah və sorğunun `traceId` dəyəri olur. Yoxlama xətalarında əlavə olaraq `errors` sahəsi verilir. Serverin 500 xətalarında daxili xəta məlumatı istifadəçiyə göstərilmir.
