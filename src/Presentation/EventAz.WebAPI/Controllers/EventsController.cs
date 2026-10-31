@@ -1,6 +1,7 @@
 using EventAz.Application.Features.Events.Commands.CreateEvent;
 using EventAz.Application.Features.Events.Commands.PublishEvent;
 using EventAz.Application.Features.Events.Queries.GetEventById;
+using EventAz.Application.Features.Events.Queries.GetAdminEvents;
 using EventAz.Application.Features.Events.Queries.GetPublishedEvents;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -19,6 +20,11 @@ public sealed class EventsController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> GetPublished([FromQuery] GetPublishedEventsQuery query)
         => Ok(await _mediator.Send(query));
+
+    [HttpGet("admin")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> GetAllForAdmin(CancellationToken ct)
+        => Ok(await _mediator.Send(new GetAdminEventsQuery(), ct));
 
     [HttpGet("{id:guid}")]
     [AllowAnonymous]

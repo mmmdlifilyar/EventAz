@@ -49,6 +49,27 @@ ASP.NET Core Web API kurs layihəsi. Layihədə Clean Architecture yanaşması, 
 dotnet build EventAz.sln
 ```
 
+## React interfeysini işə salmaq
+
+React interfeysi `frontend` qovluğunda ayrıca layihədir. Onu API-dən ayrı terminalda başladın:
+
+```bash
+cd frontend
+pnpm.cmd install
+pnpm.cmd dev
+```
+
+Brauzerdə `http://localhost:5173` ünvanını açın. İnkişaf serveri `/api` sorğularını `https://localhost:7012` ünvanındakı WebAPI-yə ötürür. API də işlək olmalıdır. API-nin ünvanı fərqlidirsə, `frontend/.env.example` faylını `.env` adı ilə köçürüb `VITE_API_BASE_URL` dəyərini yeniləyin. Bu halda həmin frontend ünvanını WebAPI-nin `Cors:AllowedOrigins` siyahısına əlavə edin.
+
+Frontend build-i:
+
+```bash
+cd frontend
+pnpm.cmd build
+```
+
+İnterfeys tədbirləri axtarır və süzür, qeydiyyat və girişi, favoritləri, promo kodla bilet alışını, QR biletini və “Biletlərim” tarixçəsini dəstəkləyir. İstifadəçi rəy oxuya və yaza bilər. Təşkilatçı tədbir yarada və bileti yoxlaya bilər. Admin tədbirləri yayımlaya, promo kod və kateqoriya idarə edə, statistikanı görə bilər.
+
 ## SMTP qurulumu
 
 `appsettings.json` faylında `EmailSettings` üçün Host, Port, UserName, FromEmail, FromName və UseSsl sahələri var. Şifrəni config faylına əlavə etməyin; User Secrets-də saxlayın:
@@ -73,6 +94,7 @@ Mühit dəyişənlərindən də istifadə edə bilərsiniz. `UseSsl=false` olduq
 | Tədbir yaratmaq | `POST /api/events` | Admin, Organizer |
 | Tədbiri yayımlamaq | `POST /api/events/{id}/publish` | Admin |
 | Bilet almaq | `POST /api/tickets` | Daxil olmuş istifadəçi |
+| Öz biletlərini görmək | `GET /api/tickets/mine` | Daxil olmuş istifadəçi |
 | Öz biletinin QR şəklini almaq | `GET /api/tickets/{ticketId}/qr` | Bilet sahibi |
 | Bileti yoxlamaq və istifadə edilmiş kimi qeyd etmək | `POST /api/tickets/validate` | Admin və ya tədbirin Organizer-i |
 | Öz favoritlərini görmək | `GET /api/favorites` | Daxil olmuş istifadəçi |

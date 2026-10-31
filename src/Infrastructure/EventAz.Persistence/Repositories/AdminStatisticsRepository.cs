@@ -22,17 +22,27 @@ public sealed class AdminStatisticsRepository : IAdminStatisticsRepository
         var ticketsSold = await soldTickets.CountAsync(ct);
         var totalRevenue = await soldTickets.SumAsync(t => (decimal?)t.PricePaid, ct) ?? 0m;
 
-        var topSellingEvents = await soldTickets
+        // Keep ordering and aggregation on the SQL-friendly projection, then map rows to the API DTO.
+        var topSellingEventRows = await soldTickets
             .GroupBy(t => new { t.TicketTier.EventId, t.TicketTier.Event.Title })
-            .Select(group => new TopSellingEventDto(
+            .Select(group => new
+            {
                 group.Key.EventId,
                 group.Key.Title,
-                group.Count(),
-                group.Sum(t => t.PricePaid)))
+                TicketsSold = group.Count(),
+                Revenue = group.Sum(t => t.PricePaid)
+            })
             .OrderByDescending(eventStats => eventStats.TicketsSold)
             .ThenBy(eventStats => eventStats.Title)
             .Take(5)
             .ToListAsync(ct);
+        var topSellingEvents = topSellingEventRows
+            .Select(eventStats => new TopSellingEventDto(
+                eventStats.EventId,
+                eventStats.Title,
+                eventStats.TicketsSold,
+                eventStats.Revenue))
+            .ToList();
 
         return new AdminStatisticsDto(
             totalUsers,

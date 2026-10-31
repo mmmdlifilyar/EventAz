@@ -14,6 +14,6 @@ internal static class EventMappings
         eventEntity.Status.ToString(),
         eventEntity.CategoryId,
         eventEntity.Category.Name,
-        eventEntity.Tiers.Select(t => new TicketTierDto(t.Name, t.Price, t.TotalQuantity)).ToList(),
+        eventEntity.Tiers.Select(t => new TicketTierDto(t.Id, t.Name, t.Price, t.TotalQuantity, t.Available)).ToList(),
         eventEntity.AverageRating);
 }

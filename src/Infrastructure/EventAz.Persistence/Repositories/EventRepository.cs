@@ -24,6 +24,15 @@ public class EventRepository : RepositoryBase<Event>, IEventRepository
         .OrderBy(e => e.StartDate)
         .ToListAsync(ct);
 
+    public Task<List<Event>> GetAllWithDetailsAsync(CancellationToken ct = default)
+        => _context.Events
+            .AsNoTracking()
+            .Include(e => e.Category)
+            .Include(e => e.Tiers)
+            .Include(e => e.Reviews)
+            .OrderByDescending(e => e.CreatedAt)
+            .ToListAsync(ct);
+
     public async Task<Event?> GetPublishedByIdWithDetailsAsync(Guid id, CancellationToken ct = default)
         => await _context.Events
             .AsNoTracking()
@@ -46,7 +55,15 @@ public class EventRepository : RepositoryBase<Event>, IEventRepository
         if (fromDate.HasValue)
             query = query.Where(e => e.StartDate >= fromDate.Value);
         if (toDate.HasValue)
-            query = query.Where(e => e.StartDate <= toDate.Value);
+        {
+            // Date-only filters represent the whole selected day, not midnight at its start.
+            var endExclusive = toDate.Value.TimeOfDay == TimeSpan.Zero
+                ? toDate.Value.Date.AddDays(1)
+                : (DateTime?)null;
+            query = endExclusive.HasValue
+                ? query.Where(e => e.StartDate < endExclusive.Value)
+                : query.Where(e => e.StartDate <= toDate.Value);
+        }
         if (!string.IsNullOrWhiteSpace(location))
             query = query.Where(e => e.Location.Contains(location));
         if (minPrice.HasValue && maxPrice.HasValue)

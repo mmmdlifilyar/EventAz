@@ -8,6 +8,7 @@ using EventAz.WebAPI.Middleware;
 using EventAz.Persistence;
 using EventAz.Persistence.Identity;
 using EventAz.Persistence.Repositories;
+using EventAz.Domain.Entities;
 using FluentValidation;
 using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -78,6 +79,10 @@ builder.Services.AddValidatorsFromAssembly(
 builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
 
 builder.Services.AddControllers();
+builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
+    policy.WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+        .AllowAnyHeader()
+        .AllowAnyMethod()));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -102,6 +107,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
@@ -116,6 +122,16 @@ using (var scope = app.Services.CreateScope())
         if (!await roleManager.RoleExistsAsync(role))
             await roleManager.CreateAsync(new IdentityRole(role));
     }
+
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var defaultCategories = new[] { "Musiqi", "Teatr", "Festival", "İdman", "Konfrans", "İncəsənət" };
+    var existingCategoryNames = await dbContext.Categories.Select(category => category.Name).ToListAsync();
+    foreach (var categoryName in defaultCategories)
+    {
+        if (!existingCategoryNames.Contains(categoryName, StringComparer.OrdinalIgnoreCase))
+            dbContext.Categories.Add(new Category { Name = categoryName });
+    }
+    await dbContext.SaveChangesAsync();
 }
 
 app.Run();

@@ -16,6 +16,14 @@ public sealed class TicketOperationsRepository : ITicketOperationsRepository
             .ThenInclude(tier => tier.Event)
             .FirstOrDefaultAsync(t => t.Id == ticketId && t.UserId == userId, ct);
 
+    public Task<List<Ticket>> GetMyTicketsAsync(string userId, CancellationToken ct = default)
+        => _context.Tickets.AsNoTracking()
+            .Where(t => t.UserId == userId)
+            .Include(t => t.TicketTier)
+            .ThenInclude(tier => tier.Event)
+            .OrderByDescending(t => t.PurchaseDate)
+            .ToListAsync(ct);
+
     public async Task<TicketValidationResult> ValidateAndRedeemAsync(
         string qrCode, string userId, bool isAdmin, CancellationToken ct = default)
     {

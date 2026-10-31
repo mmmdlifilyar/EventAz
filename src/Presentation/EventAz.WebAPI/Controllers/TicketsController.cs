@@ -1,5 +1,6 @@
 using EventAz.Application.Features.Tickets.Commands.PurchaseTicket;
 using EventAz.Application.Features.Tickets.Commands.ValidateTicket;
+using EventAz.Application.Features.Tickets.Queries.GetMyTickets;
 using EventAz.Application.Interfaces;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -35,6 +36,10 @@ public sealed class TicketsController : ControllerBase
             _ => BadRequest(new { error = "PurchaseFailed" })
         };
     }
+
+    [HttpGet("mine")]
+    public async Task<IActionResult> GetMine(CancellationToken ct)
+        => Ok(await _mediator.Send(new GetMyTicketsQuery(), ct));
 
     [HttpGet("{ticketId:guid}/qr")]
     public async Task<IActionResult> GetQrCode(Guid ticketId, CancellationToken ct)

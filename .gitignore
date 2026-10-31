@@ -4,3 +4,7 @@ obj/
 *.user
 *.suo
 appsettings.Development.json
+frontend/node_modules/
+frontend/dist/
+frontend/.api-build-check/
+frontend/.*-build-check/

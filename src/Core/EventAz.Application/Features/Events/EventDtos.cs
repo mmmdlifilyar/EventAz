@@ -1,6 +1,6 @@
 namespace EventAz.Application.Features.Events;
 
-public sealed record TicketTierDto(string Name, decimal Price, int TotalQuantity);
+public sealed record TicketTierDto(Guid Id, string Name, decimal Price, int TotalQuantity, int Available);
 
 public sealed record EventDto(
     Guid Id,

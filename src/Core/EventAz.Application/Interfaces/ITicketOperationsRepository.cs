@@ -23,6 +23,7 @@ public sealed record TicketValidationResult(
 public interface ITicketOperationsRepository
 {
     Task<Ticket?> GetOwnedTicketAsync(Guid ticketId, string userId, CancellationToken ct = default);
+    Task<List<Ticket>> GetMyTicketsAsync(string userId, CancellationToken ct = default);
     Task<TicketValidationResult> ValidateAndRedeemAsync(
         string qrCode, string userId, bool isAdmin, CancellationToken ct = default);
 }
