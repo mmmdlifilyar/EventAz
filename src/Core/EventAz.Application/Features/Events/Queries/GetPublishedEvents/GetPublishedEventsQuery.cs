@@ -8,4 +8,8 @@ public sealed record GetPublishedEventsQuery(
     string? Search = null,
     Guid? CategoryId = null,
     DateTime? FromDate = null,
-    DateTime? ToDate = null) : IRequest<PagedResult<EventDto>>;
+    DateTime? ToDate = null,
+    string? Location = null,
+    decimal? MinPrice = null,
+    decimal? MaxPrice = null,
+    string SortBy = "date") : IRequest<PagedResult<EventDto>>;

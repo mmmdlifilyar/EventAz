@@ -9,5 +9,6 @@ public interface IEventRepository : IRepository<Event>
     Task<Event?> GetPublishedByIdWithDetailsAsync(Guid id, CancellationToken ct = default);
     Task<(List<Event> Events, int TotalCount)> GetPublishedPageAsync(
         int page, int pageSize, string? search, Guid? categoryId,
-        DateTime? fromDate, DateTime? toDate, CancellationToken ct = default);
+        DateTime? fromDate, DateTime? toDate, string? location,
+        decimal? minPrice, decimal? maxPrice, string? sortBy, CancellationToken ct = default);
 }

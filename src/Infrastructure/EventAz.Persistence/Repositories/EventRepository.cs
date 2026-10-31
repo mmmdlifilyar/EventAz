@@ -34,7 +34,8 @@ public class EventRepository : RepositoryBase<Event>, IEventRepository
 
     public async Task<(List<Event> Events, int TotalCount)> GetPublishedPageAsync(
         int page, int pageSize, string? search, Guid? categoryId,
-        DateTime? fromDate, DateTime? toDate, CancellationToken ct = default)
+        DateTime? fromDate, DateTime? toDate, string? location,
+        decimal? minPrice, decimal? maxPrice, string? sortBy, CancellationToken ct = default)
     {
         var query = _context.Events.AsNoTracking()
             .Where(e => e.Status == EventAz.Domain.Enums.EventStatus.Published);
@@ -46,10 +47,28 @@ public class EventRepository : RepositoryBase<Event>, IEventRepository
             query = query.Where(e => e.StartDate >= fromDate.Value);
         if (toDate.HasValue)
             query = query.Where(e => e.StartDate <= toDate.Value);
+        if (!string.IsNullOrWhiteSpace(location))
+            query = query.Where(e => e.Location.Contains(location));
+        if (minPrice.HasValue && maxPrice.HasValue)
+            query = query.Where(e => e.Tiers.Any(t => t.Price >= minPrice.Value && t.Price <= maxPrice.Value));
+        else if (minPrice.HasValue)
+            query = query.Where(e => e.Tiers.Any(t => t.Price >= minPrice.Value));
+        else if (maxPrice.HasValue)
+            query = query.Where(e => e.Tiers.Any(t => t.Price <= maxPrice.Value));
 
         var totalCount = await query.CountAsync(ct);
-        var events = await query
-            .OrderBy(e => e.StartDate)
+        var orderedQuery = (sortBy ?? "date").Trim().ToLowerInvariant() switch
+        {
+            "price_asc" => query.OrderBy(e => e.Tiers
+                .OrderBy(t => t.Price).Select(t => (decimal?)t.Price).FirstOrDefault())
+                .ThenBy(e => e.StartDate),
+            "price_desc" => query.OrderByDescending(e => e.Tiers
+                .OrderByDescending(t => t.Price).Select(t => (decimal?)t.Price).FirstOrDefault())
+                .ThenBy(e => e.StartDate),
+            "date_desc" => query.OrderByDescending(e => e.StartDate),
+            _ => query.OrderBy(e => e.StartDate)
+        };
+        var events = await orderedQuery
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Include(e => e.Category)
