@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { addFavorite, authenticate, createReview, downloadTicketQr, getCategories, getEvent, getEventReviews, getEvents, getFavorites, getMyTickets, getRoles, getToken, purchaseTicket, removeFavorite, type EventFilters } from './api'
+import { addFavorite, authenticate, createReview, downloadTicketQr, eventImageUrl, getCategories, getEvent, getEventReviews, getEvents, getFavorites, getMyTickets, getRoles, getToken, purchaseTicket, removeFavorite, requestPasswordReset, resetPassword, type EventFilters } from './api'
 import type { Category, EventItem, Review, TicketHistory } from './types'
 import ManagementPanel from './ManagementPanel'
 
@@ -45,7 +45,8 @@ function App() {
   const [favoritesLoading, setFavoritesLoading] = useState(false)
   const [ticketQrUrls, setTicketQrUrls] = useState<Record<string, string>>({})
   const [authOpen, setAuthOpen] = useState(false)
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot' | 'reset'>('login')
+  const [resetDetails, setResetDetails] = useState<{ email: string; token: string } | null>(null)
   const [authError, setAuthError] = useState('')
   const [authSubmitting, setAuthSubmitting] = useState(false)
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
@@ -61,6 +62,24 @@ function App() {
   const roles = useMemo(() => getRoles(), [token])
   const managementRole = roles.includes('Admin') ? 'Admin' : roles.includes('Organizer') ? 'Organizer' : null
   const showFavorites = activeView === 'favorites'
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const email = params.get('resetEmail')
+    const resetToken = params.get('resetToken')
+    if (email && resetToken) {
+      setResetDetails({ email, token: resetToken })
+      setAuthMode('reset')
+      setAuthOpen(true)
+      window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`)
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleExpiredSession = () => setToken(null)
+    window.addEventListener('eventaz-session-expired', handleExpiredSession)
+    return () => window.removeEventListener('eventaz-session-expired', handleExpiredSession)
+  }, [])
 
   const loadEvents = useCallback(async (signal?: AbortSignal) => {
     setBusy(true)
@@ -86,7 +105,9 @@ function App() {
   useEffect(() => {
     if (!token) { setFavorites([]); return }
     setFavoritesLoading(true)
-    void getFavorites().then(setFavorites).catch((err) => setError((err as Error).message)).finally(() => setFavoritesLoading(false))
+    void getFavorites().then(setFavorites).catch((err) => {
+      if ((err as Error).message !== 'Sessiya müddəti bitib. Davam etmək üçün yenidən daxil ol.') setError((err as Error).message)
+    }).finally(() => setFavoritesLoading(false))
   }, [token])
   useEffect(() => {
     if (!token || activeView !== 'tickets') { setTickets([]); return }
@@ -180,6 +201,31 @@ function App() {
   async function handleAuth(form: FormData) {
     setAuthError('')
     setAuthSubmitting(true)
+    if (authMode === 'forgot') {
+      try {
+        const result = await requestPasswordReset(String(form.get('email') ?? ''))
+        setNotice(result.message)
+        setAuthMode('login')
+      } catch (err) { setAuthError((err as Error).message) }
+      finally { setAuthSubmitting(false) }
+      return
+    }
+    if (authMode === 'reset') {
+      if (!resetDetails) { setAuthError('Sıfırlama linki düzgün deyil.'); setAuthSubmitting(false); return }
+      if (String(form.get('password') ?? '') !== String(form.get('confirmPassword') ?? '')) {
+        setAuthError('Şifrələr eyni deyil.')
+        setAuthSubmitting(false)
+        return
+      }
+      try {
+        const result = await resetPassword(resetDetails.email, resetDetails.token, String(form.get('password') ?? ''))
+        setNotice(result.message)
+        setResetDetails(null)
+        setAuthMode('login')
+      } catch (err) { setAuthError((err as Error).message) }
+      finally { setAuthSubmitting(false) }
+      return
+    }
     const data: Record<string, string> = {
       email: String(form.get('email') ?? ''),
       password: String(form.get('password') ?? ''),
@@ -328,6 +374,7 @@ function App() {
               const isFav = favoriteIds.has(event.id)
               return <article className="event-card" key={event.id}>
                 <button className={`event-art ${palettes[index % palettes.length]}`} onClick={() => void openDetails(event)} aria-label={`${event.title} detallarını aç`}>
+                  <img className="event-cover-image" src={eventImageUrl(event.id)} alt="" aria-hidden="true" onLoad={(image) => { if (image.currentTarget.naturalWidth > 0) image.currentTarget.parentElement?.classList.add('has-image') }} />
                   <span className="art-label">{event.categoryName || 'TƏDBİR'}</span><span className="art-date"><b>{date.day}</b><small>{date.month.slice(0, 3)}</small></span>
                   <span className="card-art-symbol">{['♫', '✳', '◉', '✦', '☼', '◌'][index % 6]}</span><span className="art-caption">{event.location.toUpperCase()}</span>
                 </button>
@@ -348,9 +395,9 @@ function App() {
 
       <footer className="footer"><a className="brand footer-brand" href="#top"><span className="brand-mark">e<span>·</span></span><span>event<span className="brand-accent">az</span></span></a><span>Bakıdan, sevgi ilə. © 2026 EventAz</span><a href="#top">Yuxarı qayıt ↑</a></footer>
 
-      {selectedEvent && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedEvent(null) }}><section className="event-modal" role="dialog" aria-modal="true" aria-labelledby="event-modal-title"><button className="modal-close" onClick={() => setSelectedEvent(null)} aria-label="Bağla">×</button><div className={`modal-art ${palettes[Math.abs(selectedEvent.title.length) % palettes.length]}`}><span>{selectedEvent.categoryName}</span><b>✳</b><small>{selectedEvent.location}</small></div><div className="modal-content">{error && <div className="error-banner modal-error"><span>!</span><div>{error}</div><button onClick={() => setError('')}>Bağla</button></div>}<div className="event-date-line">{dateParts(selectedEvent.startDate).full} · {timeLabel(selectedEvent.startDate)}–{timeLabel(selectedEvent.endDate)} · {selectedEvent.location}</div><h2 id="event-modal-title">{selectedEvent.title}</h2><p className="modal-description">{selectedEvent.description}</p><div className="event-actions"><button className="outline-button" onClick={() => void shareEvent(selectedEvent)}>↗ Tədbiri paylaş</button><button className="outline-button" onClick={() => downloadCalendarEvent(selectedEvent)}>▣ Təqvimə əlavə et</button></div><div className="modal-subhead"><h3>Bilet növünü seç</h3><span>Ödəniş təhlükəsizdir</span></div><div className="tier-list">{selectedEvent.tiers.map((tier) => <div className="tier-row" key={tier.id}><div><b>{tier.name}</b><small>{tier.available > 0 ? `${tier.available} bilet qalıb` : 'Bilet bitib'}</small></div><strong>{money(tier.price)}</strong><button disabled={tier.available <= 0 || purchasingTierId !== null} onClick={() => void handlePurchase(tier.id)}>{tier.available <= 0 ? 'Bitib' : purchasingTierId === tier.id ? 'Gözlə...' : token ? 'Al' : 'Daxil ol'}</button></div>)}</div><label className="promo-input">Promo kod <input value={promoCode} onChange={(event) => setPromoCode(event.target.value)} placeholder="KODU DAXİL ET" /></label>{qrUrl && <a className="qr-download" href={qrUrl} download="eventaz-bilet.png"><span>✓</span> QR biletini yüklə</a>}<div className="modal-rating">★ {selectedEvent.averageRating ? selectedEvent.averageRating.toFixed(1) : 'Bu tədbirə hələ rəy yoxdur'}</div><section className="reviews-section"><div className="review-heading"><h3>İştirakçı rəyləri</h3><span>{reviews.length} rəy</span></div>{reviewsLoading ? <p className="no-reviews">Rəylər yüklənir...</p> : reviews.length > 0 ? <div className="review-list">{reviews.map((review) => <article className="review-item" key={review.id}><div className="review-stars">{'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}</div><p>{review.comment || 'İştirakçı şərh yazmayıb.'}</p><small>{new Date(review.createdAt).toLocaleDateString('az-AZ')}</small></article>)}</div> : <p className="no-reviews">Bu tədbirə hələ rəy yazılmayıb.</p>}{token && <div className="review-form"><label>Qiymət<select value={reviewRating} onChange={(event) => setReviewRating(Number(event.target.value))}>{[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating} ulduz</option>)}</select></label><label>Rəyin<textarea rows={2} maxLength={1000} value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} placeholder="Tədbir təcrübəni bölüş..." /></label><button disabled={reviewSubmitting} onClick={() => void submitReview()}>{reviewSubmitting ? 'Göndərilir...' : 'Rəy yaz　→'}</button><small>Rəy yalnız tədbir başa çatdıqdan və bilet aldıqdan sonra yazıla bilər.</small></div>}</section></div></section></div>}
+      {selectedEvent && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedEvent(null) }}><section className="event-modal" role="dialog" aria-modal="true" aria-labelledby="event-title"><button className="modal-close" onClick={() => setSelectedEvent(null)} aria-label="Bağla">×</button><div className={`modal-art ${palettes[Math.abs(selectedEvent.title.length) % palettes.length]}`}><img className="modal-cover-image" src={eventImageUrl(selectedEvent.id)} alt="" aria-hidden="true" onLoad={(image) => { if (image.currentTarget.naturalWidth > 0) image.currentTarget.parentElement?.classList.add('has-image') }} /><span>{selectedEvent.categoryName}</span><b>✳</b><small>{selectedEvent.location}</small></div><div className="modal-content">{error && <div className="error-banner modal-error"><span>!</span><div>{error}</div><button onClick={() => setError('')}>Bağla</button></div>}<div className="event-date-line">{dateParts(selectedEvent.startDate).full} · {timeLabel(selectedEvent.startDate)}–{timeLabel(selectedEvent.endDate)} · {selectedEvent.location}</div><h2 id="event-title">{selectedEvent.title}</h2><p className="modal-description">{selectedEvent.description}</p><div className="event-actions"><button className="outline-button" onClick={() => void shareEvent(selectedEvent)}>↗ Tədbiri paylaş</button><button className="outline-button" onClick={() => downloadCalendarEvent(selectedEvent)}>▣ Təqvimə əlavə et</button></div><div className="modal-subhead"><h3>Bilet növünü seç</h3><span>Ödəniş təhlükəsizdir</span></div><div className="tier-list">{selectedEvent.tiers.map((tier) => <div className="tier-row" key={tier.id}><div><b>{tier.name}</b><small>{tier.available > 0 ? `${tier.available} bilet qalıb` : 'Bilet bitib'}</small></div><strong>{money(tier.price)}</strong><button disabled={tier.available <= 0 || purchasingTierId !== null} onClick={() => void handlePurchase(tier.id)}>{tier.available <= 0 ? 'Bitib' : purchasingTierId === tier.id ? 'Gözlə...' : token ? 'Al' : 'Daxil ol'}</button></div>)}</div><label className="promo-input">Promo kod <input value={promoCode} onChange={(event) => setPromoCode(event.target.value)} placeholder="KODU DAXİL ET" /></label>{qrUrl && <a className="qr-download" href={qrUrl} download="eventaz-bilet.png"><span>✓</span> QR biletini yüklə</a>}<div className="modal-rating">★ {selectedEvent.averageRating ? selectedEvent.averageRating.toFixed(1) : 'Bu tədbirə hələ rəy yoxdur'}</div><section className="reviews-section"><div className="review-heading"><h3>İştirakçı rəyləri</h3><span>{reviews.length} rəy</span></div>{reviewsLoading ? <p className="no-reviews">Rəylər yüklənir...</p> : reviews.length > 0 ? <div className="review-list">{reviews.map((review) => <article className="review-item" key={review.id}><div className="review-stars">{'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}</div><p>{review.comment || 'İştirakçı şərh yazmayıb.'}</p><small>{new Date(review.createdAt).toLocaleDateString('az-AZ')}</small></article>)}</div> : <p className="no-reviews">Bu tədbirə hələ rəy yazılmayıb.</p>}{token && <div className="review-form"><label>Qiymət<select value={reviewRating} onChange={(event) => setReviewRating(Number(event.target.value))}>{[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating} ulduz</option>)}</select></label><label>Rəyin<textarea rows={2} maxLength={1000} value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} placeholder="Tədbir təcrübəni bölüş..." /></label><button disabled={reviewSubmitting} onClick={() => void submitReview()}>{reviewSubmitting ? 'Göndərilir...' : 'Rəy yaz　→'}</button><small>Rəy yalnız tədbir başa çatdıqdan və bilet aldıqdan sonra yazıla bilər.</small></div>}</section></div></section></div>}
 
-      {authOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { setAuthOpen(false); setAuthError('') } }}><section className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title"><button className="modal-close" onClick={() => { setAuthOpen(false); setAuthError('') }} aria-label="Bağla">×</button><div className="auth-mark">e<span>·</span></div><div className="eyebrow dark-eyebrow">EVENTAZ-A XOŞ GƏLMİSƏN</div><h2 id="auth-title">{authMode === 'login' ? 'Yenidən görüşdük.' : 'Sənin yerin hazırdır.'}</h2><p>{authMode === 'login' ? 'Davam etmək üçün hesabına daxil ol.' : 'Tədbirləri kəşf etmək üçün hesab yarat.'}</p>{authError && <div className="error-banner auth-error"><span>!</span><div>{authError}</div></div>}<form onSubmit={(event) => { event.preventDefault(); void handleAuth(new FormData(event.currentTarget)) }}>{authMode === 'register' && <label>Ad və soyad<input name="fullName" required placeholder="Məsələn, Aysel Məmmədova" /></label>}<label>E-poçt<input name="email" type="email" required placeholder="sen@example.com" /></label><label>Şifrə<input name="password" type="password" minLength={6} required placeholder="Ən azı 6 simvol" /></label><button className="auth-submit" type="submit" disabled={authSubmitting}>{authSubmitting ? 'Gözlə...' : authMode === 'login' ? 'Daxil ol' : 'Hesab yarat'} <span>→</span></button></form><button className="auth-switch" disabled={authSubmitting} onClick={() => { setAuthError(''); setAuthMode((mode) => mode === 'login' ? 'register' : 'login') }}>{authMode === 'login' ? 'Hesabın yoxdur? Qeydiyyatdan keç' : 'Artıq hesabın var? Daxil ol'}</button></section></div>}
+      {authOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { setAuthOpen(false); setAuthError('') } }}><section className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title"><button className="modal-close" onClick={() => { setAuthOpen(false); setAuthError('') }} aria-label="Bağla">×</button><div className="auth-mark">e<span>·</span></div><div className="eyebrow dark-eyebrow">EVENTAZ-A XOŞ GƏLMİSƏN</div><h2 id="auth-title">{authMode === 'login' ? 'Yenidən görüşdük.' : authMode === 'register' ? 'Sənin yerin hazırdır.' : authMode === 'forgot' ? 'Şifrəni unutdun?' : 'Yeni şifrə təyin et.'}</h2><p>{authMode === 'login' ? 'Davam etmək üçün hesabına daxil ol.' : authMode === 'register' ? 'Tədbirləri kəşf etmək üçün hesab yarat.' : authMode === 'forgot' ? 'Şifrəni sıfırlamaq üçün e-poçt ünvanını daxil et.' : 'Hesabın üçün yeni şifrə seç.'}</p>{authError && <div className="error-banner auth-error"><span>!</span><div>{authError}</div></div>}<form onSubmit={(event) => { event.preventDefault(); void handleAuth(new FormData(event.currentTarget)) }}>{authMode === 'register' && <label>Ad və soyad<input name="fullName" required placeholder="Məsələn, Aysel Məmmədova" /></label>}{authMode !== 'reset' && <label>E-poçt<input name="email" type="email" required placeholder="sen@example.com" /></label>}{(authMode === 'login' || authMode === 'register' || authMode === 'reset') && <label>Şifrə<input name="password" type="password" minLength={6} required placeholder="Ən azı 6 simvol" /></label>}{authMode === 'reset' && <label>Şifrəni təkrar daxil et<input name="confirmPassword" type="password" minLength={6} required placeholder="Yeni şifrə" /></label>}<button className="auth-submit" type="submit" disabled={authSubmitting}>{authSubmitting ? 'Gözlə...' : authMode === 'login' ? 'Daxil ol' : authMode === 'register' ? 'Hesab yarat' : authMode === 'forgot' ? 'Link göndər' : 'Şifrəni yenilə'} <span>→</span></button></form>{authMode === 'login' && <button className="auth-switch" disabled={authSubmitting} onClick={() => { setAuthError(''); setAuthMode('forgot') }}>Şifrəni unutdum</button>}<button className="auth-switch" disabled={authSubmitting || authMode === 'reset'} onClick={() => { setAuthError(''); setAuthMode((mode) => mode === 'login' || mode === 'forgot' ? 'register' : 'login') }}>{authMode === 'login' || authMode === 'forgot' ? 'Hesabın yoxdur? Qeydiyyatdan keç' : 'Artıq hesabın var? Daxil ol'}</button></section></div>}
       {notice && <div className="toast"><span>✓</span>{notice}</div>}
     </div>
   )

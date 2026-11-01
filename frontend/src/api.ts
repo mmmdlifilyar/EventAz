@@ -8,7 +8,7 @@ export function getToken() {
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
-  if (init.body) headers.set('Content-Type', 'application/json')
+  if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
 
@@ -21,9 +21,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   if (!response.ok) {
     let message = `Sorğu alınmadı (${response.status}).`
+    if (response.status === 401 && token) {
+      // Expired tokens should not poison public pages or keep triggering 401s.
+      localStorage.removeItem('eventaz-token')
+      window.dispatchEvent(new Event('eventaz-session-expired'))
+      message = 'Sessiya müddəti bitib. Davam etmək üçün yenidən daxil ol.'
+    }
     try {
       const body = await response.json()
-      message = body.detail ?? body.title ?? body.error ?? message
+      message = body.detail ?? body.title ?? body.message ?? body.error ?? message
       const knownErrors: Record<string, string> = {
         EventNotFinished: 'Tədbir başa çatdıqdan sonra rəy yaza bilərsən.',
         TicketRequired: 'Rəy yazmaq üçün bu tədbirə bilet almalısan.',
@@ -66,6 +72,7 @@ export async function getEvents(filters: EventFilters, pageSize = 9, signal?: Ab
 }
 
 export const getEvent = (id: string) => request<EventItem>(`/api/events/${id}`)
+export const eventImageUrl = (id: string) => `${API_BASE}/api/events/${id}/image`
 export const getAdminEvents = () => request<EventItem[]>('/api/events/admin')
 export const getCategories = () => request<Category[]>('/api/categories')
 export const createCategory = (name: string) => request<string>('/api/categories', { method: 'POST', body: JSON.stringify({ name }) })
@@ -79,6 +86,10 @@ export const purchaseTicket = (ticketTierId: string, promoCode: string) =>
 
 export const authenticate = (mode: 'login' | 'register', data: Record<string, string>) =>
   request<{ token: string }>(`/api/auth/${mode}`, { method: 'POST', body: JSON.stringify(data) })
+export const requestPasswordReset = (email: string) =>
+  request<{ message: string }>('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) })
+export const resetPassword = (email: string, token: string, password: string) =>
+  request<{ message: string }>('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ email, token, password }) })
 
 export const getMyTickets = () => request<TicketHistory[]>('/api/tickets/mine')
 export const getEventReviews = (eventId: string) => request<Review[]>(`/api/reviews/event/${eventId}`)
@@ -88,6 +99,11 @@ export const createReview = (eventId: string, rating: number, comment: string) =
   })
 export const createEvent = (payload: unknown) =>
   request<{ id: string }>('/api/events', { method: 'POST', body: JSON.stringify(payload) })
+export const uploadEventImage = (eventId: string, image: File) => {
+  const form = new FormData()
+  form.append('file', image)
+  return request<void>(`/api/events/${eventId}/image`, { method: 'POST', body: form })
+}
 export const publishEvent = (eventId: string) =>
   request<void>(`/api/events/${eventId}/publish`, { method: 'POST' })
 export const getAdminStatistics = () => request<AdminStatistics>('/api/admin/statistics')

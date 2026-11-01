@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   createCategory, createEvent, createPromoCode, deactivatePromoCode, getAdminEvents,
   getAdminStatistics, getPromoCodesByEvent, publishEvent, validateTicket,
+  uploadEventImage,
 } from './api'
 import type { AdminStatistics, Category, EventItem, PromoCode } from './types'
 
@@ -28,6 +29,8 @@ export default function ManagementPanel({ role, categories, onCategoriesChanged,
   const [loading, setLoading] = useState(false)
   const [eventsLoading, setEventsLoading] = useState(false)
   const [createdEventId, setCreatedEventId] = useState<string | null>(null)
+  const [eventImage, setEventImage] = useState<File | null>(null)
+  const [createdImageError, setCreatedImageError] = useState('')
 
   const refreshAdminEvents = useCallback(async () => {
     if (!isAdmin) return
@@ -52,6 +55,12 @@ export default function ManagementPanel({ role, categories, onCategoriesChanged,
     form.preventDefault()
     const formElement = form.currentTarget
     const data = new FormData(formElement)
+    const imageFile = data.get('image')
+    const selectedImage = imageFile instanceof File && imageFile.size ? imageFile : null
+    if (selectedImage && (!['image/jpeg', 'image/png', 'image/webp'].includes(selectedImage.type) || selectedImage.size > 5 * 1024 * 1024)) {
+      onError('Şəkil JPG, PNG və ya WebP olmalı və 5 MB-dan kiçik olmalıdır.')
+      return
+    }
     const startDate = new Date(String(data.get('startDate')))
     const endDate = new Date(String(data.get('endDate')))
     if (endDate <= startDate) { onError('Bitmə vaxtı başlama vaxtından sonra olmalıdır.'); return }
@@ -67,23 +76,47 @@ export default function ManagementPanel({ role, categories, onCategoriesChanged,
     setLoading(true)
     try {
       const created = await createEvent(payload)
-      formElement.reset()
-      setTiers([blankTier()])
       setCreatedEventId(created.id)
+      setCreatedImageError('')
+      let imageError = ''
+      if (selectedImage) {
+        try { await uploadEventImage(created.id, selectedImage) }
+        catch (error) { imageError = (error as Error).message; setCreatedImageError(imageError) }
+      }
+      if (!imageError) {
+        formElement.reset()
+        setEventImage(null)
+      }
+      setTiers([blankTier()])
       if (isAdmin) {
         try {
           await publishEvent(created.id)
-          setCreatedEventId(null)
-          onNotice(`Tədbir yaradıldı və yayımlandı. ID: ${created.id}`)
+          if (!imageError) setCreatedEventId(null)
+          if (!imageError) onNotice(`Tədbir yaradıldı və yayımlandı. ID: ${created.id}`)
         } catch (error) {
           onError(`Tədbir yaradıldı, amma yayımlanmadı. Bu ID ilə yenidən cəhd et: ${created.id}. ${(error as Error).message}`)
         }
         await refreshAdminEvents()
       } else {
-        onNotice(`Tədbir yaradıldı. Admin təsdiqindən sonra yayımlanacaq. ID: ${created.id}`)
+        if (!imageError) onNotice(`Tədbir yaradıldı. Admin təsdiqindən sonra yayımlanacaq. ID: ${created.id}`)
       }
+      if (imageError) onError(`Tədbir yaradıldı, amma şəkil yüklənmədi: ${imageError}. Şəkli aşağıdakı düymə ilə yenidən yükləyə bilərsən.`)
       onEventsChanged()
     } catch (error) { onError((error as Error).message) }
+    finally { setLoading(false) }
+  }
+
+  async function retryCreatedImage() {
+    if (!createdEventId || !eventImage) return
+    setLoading(true)
+    try {
+      await uploadEventImage(createdEventId, eventImage)
+      setCreatedImageError('')
+      setEventImage(null)
+      setCreatedEventId(null)
+      onNotice('Tədbir şəkli yükləndi.')
+      onEventsChanged()
+    } catch (error) { setCreatedImageError((error as Error).message); onError((error as Error).message) }
     finally { setLoading(false) }
   }
 
@@ -164,11 +197,11 @@ export default function ManagementPanel({ role, categories, onCategoriesChanged,
     <aside className="management-sidebar"><div className="management-kicker">EVENTAZ İDARƏETMƏ</div><h2>{isAdmin ? 'İdarəetmə paneli' : 'Təşkilatçı paneli'}</h2><p>{isAdmin ? 'Platformanı və tədbirləri buradan idarə et.' : 'Tədbir yarat və giriş biletlərini yoxla.'}</p><nav>{tabs.map((item) => <button key={item.id} className={tab === item.id ? 'management-tab selected' : 'management-tab'} onClick={() => setTab(item.id)}><span>{item.icon}</span>{item.label}<b>→</b></button>)}</nav><div className="sidebar-tip"><span>✳</span><p>Əməliyyatlar rol icazələrinə uyğun olaraq API tərəfindən yoxlanılır.</p></div></aside>
     <div className="management-content">
       {tab === 'create' && <section className="management-card"><div className="management-card-head"><div><span className="eyebrow dark-eyebrow">YENİ TƏDBİR</span><h3>Tədbir məlumatlarını daxil et</h3><p>{isAdmin ? 'Admin olaraq tədbiri yaradıb dərhal yayımlaya bilərsən.' : 'Tədbir yaradıldıqdan sonra Admin tərəfindən yayımlanmalıdır.'}</p></div><span className="management-icon">✳</span></div><form className="management-form" onSubmit={(event) => void submitEvent(event)}>
-        <div className="form-grid"><label>Tədbirin adı<input name="title" required maxLength={150} placeholder="Məsələn, Bakı Caz Gecəsi" /></label><label>Məkan<input name="location" required maxLength={200} placeholder="Bakı, Azərbaycan" /></label><label className="wide">Təsvir<textarea name="description" required rows={3} placeholder="Tədbir haqqında qısa məlumat" /></label><label>Kateqoriya<select name="categoryId" required defaultValue=""><option value="" disabled>Kateqoriya seç</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Başlama vaxtı<input name="startDate" type="datetime-local" required /></label><label>Bitmə vaxtı<input name="endDate" type="datetime-local" required /></label></div>
+        <div className="form-grid"><label>Tədbirin adı<input name="title" required maxLength={150} placeholder="Məsələn, Bakı Caz Gecəsi" /></label><label>Məkan<input name="location" required maxLength={200} placeholder="Bakı, Azərbaycan" /></label><label className="wide">Təsvir<textarea name="description" required rows={3} placeholder="Tədbir haqqında qısa məlumat" /></label><label>Kateqoriya<select name="categoryId" required defaultValue=""><option value="" disabled>Kateqoriya seç</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Başlama vaxtı<input name="startDate" type="datetime-local" required /></label><label>Bitmə vaxtı<input name="endDate" type="datetime-local" required /></label><label className="wide">Tədbir şəkli<input name="image" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setEventImage(event.currentTarget.files?.[0] ?? null)} /><small className="field-help">İstəyə bağlıdır. JPG, PNG və ya WebP, maksimum 5 MB{eventImage ? ` · ${eventImage.name}` : ''}</small></label></div>
         <div className="tier-editor-head"><div><b>Bilet növləri</b><small>Ən azı bir bilet növü əlavə et.</small></div><button type="button" className="mini-outline" onClick={() => setTiers((current) => [...current, blankTier()])}>＋ Növ əlavə et</button></div>
         {tiers.map((tier, index) => <div className="tier-editor-row" key={index}><label>Növ<input value={tier.name} onChange={(event) => setTiers((current) => current.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} required placeholder="VIP / Standard" /></label><label>Qiymət (AZN)<input type="number" min="0" step="0.01" value={tier.price} onChange={(event) => setTiers((current) => current.map((item, i) => i === index ? { ...item, price: event.target.value } : item))} required /></label><label>Miqdar<input type="number" min="1" step="1" value={tier.totalQuantity} onChange={(event) => setTiers((current) => current.map((item, i) => i === index ? { ...item, totalQuantity: event.target.value } : item))} required /></label>{tiers.length > 1 && <button type="button" className="remove-tier" onClick={() => setTiers((current) => current.filter((_, i) => i !== index))} aria-label="Bilet növünü sil">×</button>}</div>)}
         <button className="management-submit" disabled={loading}>{loading ? 'Gözlə...' : isAdmin ? 'Yarat və yayımla　→' : 'Tədbir yarat　→'}</button>
-      </form>{createdEventId && <div className="created-event-note"><div><b>Tədbir yaradıldı</b><small>ID: {createdEventId} · {isAdmin ? 'Yayımlama tamamlanmayıb.' : 'Admin təsdiqindən sonra yayımlanacaq.'}</small></div>{isAdmin && <button className="mini-outline" disabled={loading} onClick={() => void publishDraft(createdEventId)}>Yenidən yayımla</button>}</div>}</section>}
+      </form>{createdEventId && <div className="created-event-note"><div><b>{createdImageError ? 'Tədbir yaradıldı, şəkil yüklənmədi' : 'Tədbir yaradıldı'}</b><small>ID: {createdEventId} · {isAdmin ? 'Yayımlama tamamlanıb və ya ayrıca təsdiq tələb edir.' : 'Admin təsdiqindən sonra yayımlanacaq.'}</small></div>{createdImageError && eventImage && <button className="mini-outline" disabled={loading} onClick={() => void retryCreatedImage()}>Şəkli yenidən yüklə</button>}{isAdmin && <button className="mini-outline" disabled={loading} onClick={() => void publishDraft(createdEventId)}>Yenidən yayımla</button>}</div>}</section>}
 
       {tab === 'events' && isAdmin && <section className="management-card"><div className="management-card-head"><div><span className="eyebrow dark-eyebrow">TƏDBİRLƏRƏ NƏZARƏT</span><h3>Tədbirləri idarə et</h3><p>Organizer tərəfindən yaradılmış qaralama tədbirləri burada təsdiqlə.</p></div><button className="mini-outline" disabled={eventsLoading} onClick={() => void refreshAdminEvents()}>Yenilə ↻</button></div>{eventsLoading ? <div className="panel-loading">Tədbirlər yüklənir...</div> : <div className="admin-event-list">{events.map((event) => <article className="admin-event-row" key={event.id}><div className="admin-event-main"><span className={`admin-event-status ${event.status.toLowerCase()}`}>{event.status === 'Draft' ? 'Qaralama' : event.status === 'Published' ? 'Yayımlanıb' : event.status}</span><h4>{event.title}</h4><p>{event.categoryName} · {event.location} · {new Date(event.startDate).toLocaleDateString('az-AZ')}</p><small>ID: {event.id}</small></div>{event.status === 'Draft' && <button className="management-submit" disabled={loading || new Date(event.startDate) <= new Date()} onClick={() => void publishDraft(event.id)}>{new Date(event.startDate) <= new Date() ? 'Tarix keçib' : 'Yayımla →'}</button>}</article>)}{events.length === 0 && <p className="table-empty">Hələ tədbir yaradılmayıb.</p>}</div>}</section>}
 

@@ -47,9 +47,12 @@ public sealed class FavoriteRepository : IFavoriteRepository
             .AsNoTracking()
             .Where(f => f.UserId == userId)
             .OrderByDescending(f => f.CreatedAt)
+            .Include(f => f.Event)
+                .ThenInclude(e => e.Category)
+            .Include(f => f.Event)
+                .ThenInclude(e => e.Tiers)
+            .Include(f => f.Event)
+                .ThenInclude(e => e.Reviews)
             .Select(f => f.Event)
-            .Include(e => e.Category)
-            .Include(e => e.Tiers)
-            .Include(e => e.Reviews)
             .ToListAsync(ct);
 }
